@@ -18,20 +18,44 @@ var game = new Phaser.Game(800, 600, Phaser.AUTO, '', { preload: preload, create
 
 function preload() {
 
-    game.load.image('sky', 'assets/fondo.jpg');
+    game.load.image('sky', 'assets/copia.png');
     game.load.image('ground', 'assets/platform.png');
+    game.load.image('piso', 'assets/piso.png');
     game.load.image('star', 'assets/star.png');
-    game.load.spritesheet('dude', 'assets/dude.png', 32, 48);
-
+    game.load.image('nave', 'assets/nave.png');
+    game.load.image('poder', 'assets/poder.png');
+    game.load.image('diamante', 'assets/diamond.png');
+    game.load.spritesheet('exp', 'assets/explode.png', 128, 128);
+    game.load.spritesheet('fire', 'assets/fire_2.png', 63.5, 40);
+    game.load.spritesheet('dude', 'assets/meg.png', 34, 39);
+	//32, 48
+    game.load.bitmapFont('fuente', 'assets/fonts/carrier_command.png', 'assets/fonts/carrier_command.xml');
+    
+    game.load.audio('audio_disparo', 'assets/audio/blaster.mp3');
+    game.load.audio('audio_explosion', 'assets/audio/explosion.mp3');
+    game.load.audio('audio_estrellas', 'assets/audio/p-ping.mp3');
 }
 
 var player;
 var platforms;
+var piso_flotante;
+var suelo;
 var cursors;
+
+var bullet;
+var tiempo=0;
+var tecla_disparo;
+var explosiones;
+
+var diamante;
 
 var stars;
 var score = 0;
 var scoreText;
+var scoreText2;
+
+var audio_disparo;
+var audio_explosion;
 
 function create() {
 
@@ -40,8 +64,16 @@ function create() {
 
     //  A simple background for our game
     var fondo=game.add.sprite(0, 0, 'sky');
-    fondo.width=800;
-    fondo.height=600;
+    //fondo.width=800;
+    fondo.height=700;
+    
+    var fire=game.add.sprite(730, 360, 'fire');
+    fire.animations.add('fire', [1, 2, 3, 4], 5, true);
+    fire.animations.play('fire', 5, true);
+    
+    audio_disparo=game.add.audio('audio_disparo');
+    audio_explosion=game.add.audio('audio_explosion');
+    audio_estrellas=game.add.audio('audio_estrellas');
     
     //  The platforms group contains the ground and the 2 ledges we can jump on
     platforms = game.add.group();
@@ -49,11 +81,11 @@ function create() {
     //  We will enable physics for any object that is created in this group
     platforms.enableBody = true;
 
-    // Here we create the ground.
+    // Here we create the ground. 
     var ground = platforms.create(0, game.world.height - 64, 'ground');
 
     //  Scale it to fit the width of the game (the original sprite is 400x32 in size)
-    ground.scale.setTo(2, 2);
+    ground.scale.setTo(2, 3);
 
     //  This stops it from falling away when you jump on it
     ground.body.immovable = true;
@@ -64,9 +96,22 @@ function create() {
 
     ledge = platforms.create(-150, 250, 'ground');
     ledge.body.immovable = true;
-
-    // The player and its settings
-    player = game.add.sprite(32, game.world.height - 150, 'dude');
+    
+    suelo=platforms.create(1200, game.world.height - 64, 'ground');
+    suelo.scale.setTo(2, 3);
+    suelo.body.immovable=true;
+    
+    piso_flotante=game.add.group();
+    piso_flotante.enableBody = true;
+        
+    var piso=piso_flotante.create(950, 300, 'piso');       
+    //piso.body.immovable=true;
+    
+    piso=piso_flotante.create(1100, 450, 'piso');
+    //piso.body.immovable=true;
+    
+    // The player and its settings 
+    player = game.add.sprite(34, game.world.height - 150, 'dude');
 
     //  We need to enable physics on the player
     game.physics.arcade.enable(player);
@@ -100,11 +145,55 @@ function create() {
     }
 
     //  The score
-    scoreText = game.add.text(16, 16, 'score: 0', { fontSize: '32px', fill: '#000' });
-
+    //scoreText = game.add.text(16, 16, 'score: 0', { fontSize: '32px', fill: '#000' });
+    scoreText=game.add.bitmapText(16, 16, 'fuente', 'score: 0', 15);
+    scoreText.inputEnabled=true;
+    scoreText.input.enableDrag();
+    
+    scoreText2=game.add.bitmapText(1000, 16, 'fuente', 'score: 0', 15);
+    scoreText2.inputEnabled=true;
+    scoreText2.input.enableDrag();
     //  Our controls.
     cursors = game.input.keyboard.createCursorKeys();
     
+    //Definimos el tamanio total del ambiente del juego.
+    game.world.setBounds(0, 0, 2000, 2000);
+    
+    //--- Disparar ---
+    //game.add.sprite(700, 200,'nave');
+    
+    //Configuramos la tecla espacio para disparar.
+    tecla_disparo=game.input.keyboard.addKey(Phaser.Keyboard.SPACEBAR);
+    
+    //Gestionamos el poder emitido por megaman.
+    bullet=game.add.group();
+    bullet.enableBody=true;//Activamos la fisica del elto. para poder detectar colisiones.
+    bullet.physicsBodyType=Phaser.Physics.ARCADE;
+    bullet.createMultiple(20, 'poder');//Crea varios sprites y los agrega el grupo.
+    //Establecemos las mismas propiedades para el poder.
+    bullet.setAll('outOfBoundsKill', true);//Elimina el poder si sale del ambiente.
+    bullet.setAll('checkWorldBounds', true);
+    
+    //--- Explosiones ---
+    explosiones=game.add.group();
+    explosiones.createMultiple(30, 'exp');
+    explosiones.forEach(setup, this);//Agregamos una animacion por cada elto del grupo.
+    
+    diamante=game.add.group();
+    diamante.enableBody=true;
+    diamante.physicsBodyType=Phaser.Physics.ARCADE;
+    diamante.create(700, 200, 'nave');//Creamos un sprite en el ambiente.
+    
+    diamante.create(800, 100, 'nave');
+    diamante.create(900, 150, 'nave');
+    diamante.create(1000, 250, 'nave');
+}
+
+function setup (diamante){
+    //Disminuimos el tamanio del objeto para no cambiar el lugar de la explosion.
+    diamante.anchor.x=0.5;
+    diamante.anchor.y=0.5;
+    diamante.animations.add('exp');
 }
 
 function update() {
@@ -112,6 +201,8 @@ function update() {
     //  Collide the player and the stars with the platforms
     game.physics.arcade.collide(player, platforms);
     game.physics.arcade.collide(stars, platforms);
+    game.physics.arcade.collide(player, piso_flotante);
+    //game.physics.arcade.collide(player, suelo);
 
     //  Checks to see if the player overlaps with any of the stars, if he does call the collectStar function
     game.physics.arcade.overlap(player, stars, collectStar, null, this);
@@ -125,6 +216,9 @@ function update() {
         player.body.velocity.x = -150;
 
         player.animations.play('left');
+        
+        //Movemos la camara hacia la izquiera.
+        game.camera.x = game.camera.x - 1.5; 
     }
     else if (cursors.right.isDown)
     {
@@ -132,6 +226,9 @@ function update() {
         player.body.velocity.x = 150;
 
         player.animations.play('right');
+        
+        //Movemos la camara hacia la derecha.
+        game.camera.x = game.camera.x + 1.5;
     }
     else
     {
@@ -146,6 +243,28 @@ function update() {
     {
         player.body.velocity.y = -350;
     }
+    
+    if(tecla_disparo.isDown){
+        
+        var poder;
+        if(game.time.now > tiempo){//Para controlar el tiempo entre disparos.
+            poder=bullet.getFirstExists(false);
+        }
+        
+        if(poder){
+            poder.reset(player.x, player.y);//Defimos la posicion desde donde sale el poder.
+            poder.body.velocity.x=250;//Configuramos la velocidad horizontal del disparo.
+            audio_disparo.play('', 0, 0.7, false, true);
+            tiempo=game.time.now + 100;
+        }
+    }
+    
+    //Para comprobar si existe solapamiento entre el poder emitido por megaman (bullet) y un diamante. Si existe solapamiento
+    //se ejecuta la funcion colision con bullet y diamante como parametros.
+    game.physics.arcade.overlap(bullet, diamante, colision, null, this);
+    
+    //game.physics.arcade.overlap(player, suelo, mover_camara, null, this);
+    //game.physics.arcade.collide(player, piso_flotante, mover_camara);
 
 }
 
@@ -154,10 +273,28 @@ function collectStar (player, star) {
     // Removes the star from the screen
     star.kill();
 
+    audio_estrellas.play('', 0, 0.5, false, true);
     //  Add and update the score
     score += 10;
     scoreText.text = 'Score: ' + score;
+    
+    scoreText2.text='Score: ' + score;
 
+}
+
+function colision (bullet, d){
+    bullet.kill();
+    d.kill();//Eliminamos el objeto que es impactado por el poder.
+    
+    var explosion=explosiones.getFirstExists(false);
+    explosion.reset(d.x, d.y);//La explosion comienza en la posicion x, y del diamante.
+    audio_explosion.play('', 0, 0.5, false, true);
+    explosion.play('exp', 30, false, true);
+}
+
+function mover_camara (player, suelo){
+    //audio_explosion.play();
+    game.camera.x = game.camera.x + 350;
 }
 
 </script>
