@@ -25,6 +25,9 @@ function preload() {
     game.load.image('nave', 'assets/nave.png');
     game.load.image('poder', 'assets/poder.png');
     game.load.image('diamante', 'assets/diamond.png');
+    game.load.image('misil', 'assets/misil.png');
+    game.load.image('misil_2', 'assets/misil_2.png');
+    game.load.image('nave_wander', 'assets/nave_wander.png');
     game.load.spritesheet('exp', 'assets/explode.png', 128, 128);
     game.load.spritesheet('fire', 'assets/fire_2.png', 63.5, 40);
     game.load.spritesheet('dude', 'assets/meg.png', 34, 39);
@@ -36,6 +39,7 @@ function preload() {
     game.load.audio('audio_estrellas', 'assets/audio/p-ping.mp3');
 }
 
+//--- Juega el rol de target en el steering behaviors seek ---
 var player;
 var platforms;
 var piso_flotante;
@@ -45,14 +49,34 @@ var cursors;
 var bullet;
 var tiempo=0;
 var tecla_disparo;
+
+//--- Es el tiempo que debe transcurrir para hacer un disparo dirigido al rockman --- 
+var tiempo_enemigo=15000;
+var nave;
+//--- Guardamos todos los disparos dirigidos al rockman ---
+var disparos=[];
+var exp_player;
+//--- Punto de referencia para rotar un disparo dirigido. Por defecto se utiliza el origen ---
+var referencia=new Phaser.Point();
+
+//--- Parametros para implementar el steering behaviors seek ---
+var masa=0.01;
+var speed_max=200;
+
+//--- Parametros para implementar el steering behaviors wander ---
+var wander_angle=0;
+var nave_wander;
+var max_wander_force=500;
+var wander_mass=0.055;
+var tiempo_wander=15000;
+
 var explosiones;
 
-var diamante;
+var enemigos;
 
 var stars;
 var score = 0;
 var scoreText;
-var scoreText2;
 
 var audio_disparo;
 var audio_explosion;
@@ -64,8 +88,8 @@ function create() {
 
     //  A simple background for our game
     var fondo=game.add.sprite(0, 0, 'sky');
-    //fondo.width=800;
-    fondo.height=700;
+    //--- Definimos la altura de la imagen de fondo ---
+    fondo.height=600;
     
     var fire=game.add.sprite(730, 360, 'fire');
     fire.animations.add('fire', [1, 2, 3, 4], 5, true);
@@ -105,11 +129,9 @@ function create() {
     piso_flotante.enableBody = true;
         
     var piso=piso_flotante.create(950, 300, 'piso');       
-    //piso.body.immovable=true;
-    
+        
     piso=piso_flotante.create(1100, 450, 'piso');
-    //piso.body.immovable=true;
-    
+        
     // The player and its settings 
     player = game.add.sprite(34, game.world.height - 150, 'dude');
 
@@ -150,50 +172,123 @@ function create() {
     scoreText.inputEnabled=true;
     scoreText.input.enableDrag();
     
-    scoreText2=game.add.bitmapText(1000, 16, 'fuente', 'score: 0', 15);
-    scoreText2.inputEnabled=true;
-    scoreText2.input.enableDrag();
     //  Our controls.
     cursors = game.input.keyboard.createCursorKeys();
     
-    //Definimos el tamanio total del ambiente del juego.
-    game.world.setBounds(0, 0, 2000, 2000);
-    
-    //--- Disparar ---
-    //game.add.sprite(700, 200,'nave');
-    
-    //Configuramos la tecla espacio para disparar.
+    //--- Definimos el tamanio total del ambiente del juego ---
+    game.world.setBounds(0, 0, 2000, 600);
+        
+    //--- Configuramos la tecla espacio para disparar ---
     tecla_disparo=game.input.keyboard.addKey(Phaser.Keyboard.SPACEBAR);
+    //disparo_dirigido=game.input.keyboard.addKey(Phaser.Keyboard.X);
     
-    //Gestionamos el poder emitido por megaman.
+    //--- Disparos realizados por el rockman ---
     bullet=game.add.group();
-    bullet.enableBody=true;//Activamos la fisica del elto. para poder detectar colisiones.
+    //  Activamos la fisica del elto. para poder detectar colisiones.
+    bullet.enableBody=true;
     bullet.physicsBodyType=Phaser.Physics.ARCADE;
-    bullet.createMultiple(20, 'poder');//Crea varios sprites y los agrega el grupo.
-    //Establecemos las mismas propiedades para el poder.
-    bullet.setAll('outOfBoundsKill', true);//Elimina el poder si sale del ambiente.
+    //  Creamos un grupo de 20 sprites.
+    bullet.createMultiple(20, 'poder');
+    //  Establecemos las mismas propiedades para cada disparo.
+    bullet.setAll('outOfBoundsKill', true);//Elimina un disparo si sale del ambiente.
     bullet.setAll('checkWorldBounds', true);
     
     //--- Explosiones ---
     explosiones=game.add.group();
     explosiones.createMultiple(30, 'exp');
-    explosiones.forEach(setup, this);//Agregamos una animacion por cada elto del grupo.
+    explosiones.forEach(setup, this);
     
-    diamante=game.add.group();
-    diamante.enableBody=true;
-    diamante.physicsBodyType=Phaser.Physics.ARCADE;
-    diamante.create(700, 200, 'nave');//Creamos un sprite en el ambiente.
+    //--- Explosiones en nuestro jugador ---
+    exp_player=game.add.group();
+    exp_player.createMultiple(30, 'exp');
+    //exp_player.forEach(set, this);
     
-    diamante.create(800, 100, 'nave');
-    diamante.create(900, 150, 'nave');
-    diamante.create(1000, 250, 'nave');
+    //--- Naves enemigas distribuidas en el ambiente ---
+    enemigos=game.add.group();
+    enemigos.enableBody=true;
+    enemigos.physicsBodyType=Phaser.Physics.ARCADE;
+    enemigos.create(700, 200, 'nave');//Creamos un sprite en el ambiente.
+    
+    enemigos.create(800, 100, 'nave');
+    enemigos.create(900, 150, 'nave');
+    enemigos.create(1000, 250, 'nave');
+    
+    //--- Nave enemiga que ejecuta disparos dirigidos al rockman ---
+    nave=game.add.sprite(800, 100, 'nave');
+        
+    //--- Disparos dirigidos al rockman ---
+    disparo_enemigo=game.add.group();
+    disparo_enemigo.enableBody=true;
+    disparo_enemigo.physicsBodyType=Phaser.Physics.ARCADE;
+    disparo_enemigo.createMultiple(20, 'poder');
+    
+    //--- Nave Wander ---
+    nave_wander=game.add.sprite(500, 250, 'misil_2');
+    game.physics.arcade.enable(nave_wander);
+    nave_wander.body.collideWorldBounds = true;    
 }
 
-function setup (diamante){
-    //Disminuimos el tamanio del objeto para no cambiar el lugar de la explosion.
-    diamante.anchor.x=0.5;
-    diamante.anchor.y=0.5;
-    diamante.animations.add('exp');
+function setup (enemigo){
+    //--- Disminuimos el tamanio del objeto para no cambiar el lugar de la explosion ---
+    enemigo.anchor.x=0.5;
+    enemigo.anchor.y=0.5;
+    enemigo.animations.add('exp');
+}
+
+function set (){
+    player.animations.add('exp');
+}
+
+//--- Los puntos en el plano estan representados por las variables player y d --. 
+function seek (d){
+    var velocidad_maxima=200;
+    var fuerza_maxima=0.1;
+    //var masa=0.1;
+    
+    var velocidad_deseada=Phaser.Point.subtract(player.position, d.position);
+    velocidad_deseada=velocidad_deseada.normalize();
+    
+    velocidad_deseada=velocidad_deseada.multiply(velocidad_maxima, velocidad_maxima);
+    
+    var fuerza=Phaser.Point.subtract(velocidad_deseada, d.body.velocity);
+    
+    var magnitud=Math.sqrt(Math.pow(fuerza.x, 2) + Math.pow(fuerza.y, 2));
+    
+    if(magnitud > fuerza_maxima*fuerza_maxima)
+       fuerza=fuerza.setMagnitude(fuerza_maxima);
+    
+    
+    return fuerza;
+}
+
+function wander (){
+    var distancia=200;
+    var radio=50;
+    var angle_change=10;
+    //var velocidad=100;
+    
+    var centro_circulo=nave_wander.world;
+    
+    centro_circulo=centro_circulo.normalize();
+    
+    centro_circulo=centro_circulo.multiply(distancia, distancia);
+    
+    var desplazamiento=new Phaser.Point(centro_circulo.x,centro_circulo.y);
+    desplazamiento=desplazamiento.multiply(radio, radio);
+    desplazamiento=Phaser.Point.rotate(desplazamiento,wander_angle,wander_angle,360);
+    
+    wander_angle=wander_angle + ((Math.random()*angle_change) );//- (angle_change*0.5)
+    
+    var magnitud=Math.sqrt(Math.pow(desplazamiento.x, 2) + Math.pow(desplazamiento.y, 2));
+    
+    desplazamiento.x=Math.cos(wander_angle)*magnitud; 
+    desplazamiento.y=Math.sin(wander_angle)*magnitud; 
+    
+    var wander_force=Phaser.Point.add(nave_wander.world, desplazamiento);
+    
+    wander_force=wander_force.normalize();
+    
+    return wander_force;
 }
 
 function update() {
@@ -202,7 +297,6 @@ function update() {
     game.physics.arcade.collide(player, platforms);
     game.physics.arcade.collide(stars, platforms);
     game.physics.arcade.collide(player, piso_flotante);
-    //game.physics.arcade.collide(player, suelo);
 
     //  Checks to see if the player overlaps with any of the stars, if he does call the collectStar function
     game.physics.arcade.overlap(player, stars, collectStar, null, this);
@@ -217,8 +311,8 @@ function update() {
 
         player.animations.play('left');
         
-        //Movemos la camara hacia la izquiera.
-        game.camera.x = game.camera.x - 1.5; 
+        //--- Movemos la camara hacia la izquiera ---
+        game.camera.follow(player, Phaser.Camera.FOLLOW_LOCKON);
     }
     else if (cursors.right.isDown)
     {
@@ -227,8 +321,8 @@ function update() {
 
         player.animations.play('right');
         
-        //Movemos la camara hacia la derecha.
-        game.camera.x = game.camera.x + 1.5;
+        //--- Movemos la camara hacia la derecha ---
+        game.camera.follow(player, Phaser.Camera.FOLLOW_LOCKON);
     }
     else
     {
@@ -247,24 +341,99 @@ function update() {
     if(tecla_disparo.isDown){
         
         var poder;
-        if(game.time.now > tiempo){//Para controlar el tiempo entre disparos.
+        if(game.time.now > tiempo){//Controlamos el tiempo entre disparos.
             poder=bullet.getFirstExists(false);
         }
         
         if(poder){
-            poder.reset(player.x, player.y);//Defimos la posicion desde donde sale el poder.
-            poder.body.velocity.x=250;//Configuramos la velocidad horizontal del disparo.
+            //--- Defimos la posicion desde donde sale el disparo ---
+            poder.reset(player.x, player.y);
+            //--- Configuramos la velocidad horizontal del disparo ---
+            if(cursors.left.isDown)
+                poder.body.velocity.x=-250;
+            if(cursors.right.isDown)
+                poder.body.velocity.x=250;
+            else
+                poder.body.velocity.x=250;
+            
             audio_disparo.play('', 0, 0.7, false, true);
-            tiempo=game.time.now + 100;
+            tiempo=game.time.now + 150;
         }
+    }
+    
+    var d;
+    if(game.time.now > tiempo_enemigo){
+        d=disparo_enemigo.getFirstExists(false);
+    }
+    
+    if(d){
+        //--- Defimos la posicion desde donde sale el poder ---
+        d.reset(nave.x, nave.y);
+        //--- Guardamos los disparos en un arreglo para aplicarles el movimiento seek ---
+        disparos.push(d);
+        
+        audio_disparo.play('', 0, 0.7, false, true);
+        tiempo_enemigo=game.time.now + 15000;
+    }
+    
+    var i;
+    var n=disparos.length;
+    
+    //--- Aplicamos el movimiento seek ---
+    for(i=0; i<n; i++){
+        var disparo=disparos[i];
+        
+        var fuerza=seek(disparo);
+        
+        //--- Calculamos la aceleracion a=F/m ---
+        fuerza.x=fuerza.x/masa;//0.01
+        fuerza.y=fuerza.y/masa;//0.01
+        
+        //--- Sumamos la velocidad actual con la aceleracion calculada anteriormente ---
+        disparo.body.velocity.x = disparo.body.velocity.x + fuerza.x;
+        disparo.body.velocity.y = disparo.body.velocity.y + fuerza.y;
+        
+        var magnitud=Math.sqrt(Math.pow(disparo.body.velocity.x, 2) + Math.pow(disparo.body.velocity.y, 2));
+        
+        //--- Si la velocidad actual es muy alta, la acotamos a la velocidad maxima admitida ---
+        if(magnitud > speed_max*speed_max)//200
+          disparo.body.velocity.setMagnitude(speed_max);
+      
+
+        disparo.rotation=game.physics.arcade.angleBetween(referencia, disparo.body.velocity);
+        
+    }
+    
+    if(game.time.now > tiempo_wander){
+        var wander_force=wander();
+        
+        var magnitud=Math.sqrt(Math.pow(wander_force.x, 2) + Math.pow(wander_force.y, 2));
+        
+        //--- Acotamos la magnitud del vector si supera la fuerza maxima admitida --- 
+        if(magnitud > max_wander_force)//500
+           wander_force=wander_force.setMagnitude(max_wander_force);
+
+        //--- Calculamos la aceleracion ---
+        wander_force.x=wander_force.x / wander_mass;//0.055
+        wander_force.y=wander_force.y / wander_mass;//0.055
+
+        //--- Modificamos la velocidad del objeto que deambula ---
+        nave_wander.body.velocity.x=nave_wander.body.velocity.x + wander_force.x*magnitud;
+        nave_wander.body.velocity.y=nave_wander.body.velocity.y + wander_force.y*magnitud;
+
+        magnitud=Math.sqrt(Math.pow(nave_wander.body.velocity.x, 2) + Math.pow(nave_wander.body.velocity.y, 2));
+
+        //if(magnitud > 0.1)
+          //nave_wander.body.velocity.setMagnitude(0.1);
+        
+        tiempo_wander=game.time.now + 1000;
     }
     
     //Para comprobar si existe solapamiento entre el poder emitido por megaman (bullet) y un diamante. Si existe solapamiento
     //se ejecuta la funcion colision con bullet y diamante como parametros.
-    game.physics.arcade.overlap(bullet, diamante, colision, null, this);
+    game.physics.arcade.overlap(bullet, enemigos, colision, null, this);
     
-    //game.physics.arcade.overlap(player, suelo, mover_camara, null, this);
-    //game.physics.arcade.collide(player, piso_flotante, mover_camara);
+    //game.physics.arcade.overlap(disparo_enemigo, player, colision_jugador, null, this);
 
 }
 
@@ -277,14 +446,14 @@ function collectStar (player, star) {
     //  Add and update the score
     score += 10;
     scoreText.text = 'Score: ' + score;
-    
-    scoreText2.text='Score: ' + score;
 
 }
 
 function colision (bullet, d){
+    //--- Eliminamos nuestro disparo ---
     bullet.kill();
-    d.kill();//Eliminamos el objeto que es impactado por el poder.
+    //--- Eliminamos el objeto que es impactado por el disparo del rokman ---
+    d.kill();
     
     var explosion=explosiones.getFirstExists(false);
     explosion.reset(d.x, d.y);//La explosion comienza en la posicion x, y del diamante.
@@ -292,9 +461,12 @@ function colision (bullet, d){
     explosion.play('exp', 30, false, true);
 }
 
-function mover_camara (player, suelo){
-    //audio_explosion.play();
-    game.camera.x = game.camera.x + 350;
+function colision_jugador (disparo_enemigo, player){
+    disparo_enemigo.kill();
+    
+    var exp=exp_player.getFirstExists(false);
+    exp.reset(player.x, player.y);
+    exp.play('exp', 30, false, true);
 }
 
 </script>
