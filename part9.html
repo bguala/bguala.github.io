@@ -27,7 +27,9 @@ function preload() {
     game.load.image('diamante', 'assets/diamond.png');
     game.load.image('misil', 'assets/misil.png');
     game.load.image('misil_2', 'assets/misil_2.png');
-    game.load.image('nave_wander', 'assets/nave_wander.png');
+    game.load.image('esfera', 'assets/esfera.png');
+    game.load.image('poder_izq', 'assets/poder_izq.png');
+    //game.load.image('nave_wander', 'assets/nave_wander.png');
     game.load.spritesheet('exp', 'assets/explode.png', 128, 128);
     game.load.spritesheet('fire', 'assets/fire_2.png', 63.5, 40);
     game.load.spritesheet('dude', 'assets/meg.png', 34, 39);
@@ -46,9 +48,14 @@ var piso_flotante;
 var suelo;
 var cursors;
 
-var bullet;
+var bullet;//Hace referencia al disparo del rockman.
+var esferas;
+var poder_izq;
+var puede_disparar=false;
 var tiempo=0;
 var tecla_disparo;
+var tecla_x;
+var tecla_a;
 
 //--- Es el tiempo que debe transcurrir para hacer un disparo dirigido al rockman --- 
 var tiempo_enemigo=15000;
@@ -59,11 +66,11 @@ var exp_player;
 //--- Punto de referencia para rotar un disparo dirigido. Por defecto se utiliza el origen ---
 var referencia=new Phaser.Point();
 
-//--- Parametros para implementar el steering behaviors seek ---
+//--- Parametros para implementar el steering behavior seek ---
 var masa=0.01;
 var speed_max=200;
 
-//--- Parametros para implementar el steering behaviors wander ---
+//--- Parametros para implementar el steering behavior wander ---
 var wander_angle=0;
 var nave_wander;
 var max_wander_force=500;
@@ -71,12 +78,14 @@ var wander_mass=0.055;
 var tiempo_wander=15000;
 
 var explosiones;
-
+var diamante;
 var enemigos;
 
 var stars;
 var score = 0;
 var scoreText;
+
+var fin_juego;
 
 var audio_disparo;
 var audio_explosion;
@@ -172,6 +181,9 @@ function create() {
     scoreText.inputEnabled=true;
     scoreText.input.enableDrag();
     
+    fin_juego=game.add.bitmapText(300, 300, 'fuente', '', 15);
+    fin_juego.inputEnabled=true;
+    fin_juego.input.enableDrag();
     //  Our controls.
     cursors = game.input.keyboard.createCursorKeys();
     
@@ -180,7 +192,8 @@ function create() {
         
     //--- Configuramos la tecla espacio para disparar ---
     tecla_disparo=game.input.keyboard.addKey(Phaser.Keyboard.SPACEBAR);
-    //disparo_dirigido=game.input.keyboard.addKey(Phaser.Keyboard.X);
+    tecla_x=game.input.keyboard.addKey(Phaser.Keyboard.X);
+    tecla_a=game.input.keyboard.addKey(Phaser.Keyboard.A);
     
     //--- Disparos realizados por el rockman ---
     bullet=game.add.group();
@@ -192,6 +205,20 @@ function create() {
     //  Establecemos las mismas propiedades para cada disparo.
     bullet.setAll('outOfBoundsKill', true);//Elimina un disparo si sale del ambiente.
     bullet.setAll('checkWorldBounds', true);
+    
+    esferas=game.add.group();
+    esferas.enableBody=true;
+    esferas.physicsBodyType=Phaser.Physics.ARCADE;
+    esferas.createMultiple(3, 'esfera');
+    esferas.setAll('outOfBoundsKill', true);
+    esferas.setAll('checkWorldBounds', true);
+    
+    poder_izq=game.add.group();
+    poder_izq.enableBody=true;
+    poder_izq.physicsBodyType=Phaser.Physics.ARCADE;
+    poder_izq.createMultiple(20, 'poder_izq');
+    poder_izq.setAll('outOfBoundsKill', true);
+    poder_izq.setAll('checkWorldBounds', true);
     
     //--- Explosiones ---
     explosiones=game.add.group();
@@ -207,11 +234,13 @@ function create() {
     enemigos=game.add.group();
     enemigos.enableBody=true;
     enemigos.physicsBodyType=Phaser.Physics.ARCADE;
-    enemigos.create(700, 200, 'nave');//Creamos un sprite en el ambiente.
     
+    enemigos.create(700, 200, 'nave');//Creamos un sprite en el ambiente.
     enemigos.create(800, 100, 'nave');
     enemigos.create(900, 150, 'nave');
     enemigos.create(1000, 250, 'nave');
+    
+    enemigos.forEach(limite,this);
     
     //--- Nave enemiga que ejecuta disparos dirigidos al rockman ---
     nave=game.add.sprite(800, 100, 'nave');
@@ -225,7 +254,12 @@ function create() {
     //--- Nave Wander ---
     nave_wander=game.add.sprite(500, 250, 'misil_2');
     game.physics.arcade.enable(nave_wander);
-    nave_wander.body.collideWorldBounds = true;    
+    nave_wander.body.collideWorldBounds = true;
+    
+    //--- Diamante ---
+    diamante=game.add.sprite(1500, 400, 'diamante');
+    game.physics.arcade.enable(diamante);
+    
 }
 
 function setup (enemigo){
@@ -237,6 +271,10 @@ function setup (enemigo){
 
 function set (){
     player.animations.add('exp');
+}
+
+function limite (enemigo){
+    enemigo.body.collideWorldBounds=true;
 }
 
 //--- Los puntos en el plano estan representados por las variables player y d --. 
@@ -261,7 +299,7 @@ function seek (d){
     return fuerza;
 }
 
-function wander (){
+function wander (nave_wander){
     var distancia=200;
     var radio=50;
     var angle_change=10;
@@ -318,7 +356,7 @@ function update() {
     {
         //  Move to the right
         player.body.velocity.x = 150;
-
+        
         player.animations.play('right');
         
         //--- Movemos la camara hacia la derecha ---
@@ -336,6 +374,34 @@ function update() {
     if (cursors.up.isDown && player.body.touching.down)
     {
         player.body.velocity.y = -350;
+    }
+    
+    if(tecla_x.isDown && puede_disparar){
+        var esfera;
+        if(game.time.now > tiempo){//Controlamos el tiempo entre disparos.
+            esfera=esferas.getFirstExists(false);
+        }
+        
+        if(esfera){
+            esfera.reset(player.x, player.y);
+            esfera.body.velocity.y=-250;
+            audio_disparo.play('', 0, 0.7, false, true);
+            tiempo=game.time.now + 150;
+        }
+    }
+    
+    if(tecla_a.isDown){
+        var left;
+        if(game.time.now > tiempo){
+            left=poder_izq.getFirstExists(false);
+        }
+        
+        if(left){
+            left.reset(player.x, player.y);
+            left.body.velocity.x=-250;
+            audio_disparo.play('', 0, 0.7, false, true);
+            tiempo=game.time.now + 150;
+        }
     }
     
     if(tecla_disparo.isDown){
@@ -379,7 +445,7 @@ function update() {
     var i;
     var n=disparos.length;
     
-    //--- Aplicamos el movimiento seek ---
+    //--- Aplicamos el movimiento seek a cada disparo dirigido al rockman ---
     for(i=0; i<n; i++){
         var disparo=disparos[i];
         
@@ -405,7 +471,7 @@ function update() {
     }
     
     if(game.time.now > tiempo_wander){
-        var wander_force=wander();
+        var wander_force=wander(nave_wander);
         
         var magnitud=Math.sqrt(Math.pow(wander_force.x, 2) + Math.pow(wander_force.y, 2));
         
@@ -421,18 +487,32 @@ function update() {
         nave_wander.body.velocity.x=nave_wander.body.velocity.x + wander_force.x*magnitud;
         nave_wander.body.velocity.y=nave_wander.body.velocity.y + wander_force.y*magnitud;
 
-        magnitud=Math.sqrt(Math.pow(nave_wander.body.velocity.x, 2) + Math.pow(nave_wander.body.velocity.y, 2));
+        //magnitud=Math.sqrt(Math.pow(nave_wander.body.velocity.x, 2) + Math.pow(nave_wander.body.velocity.y, 2));
 
         //if(magnitud > 0.1)
           //nave_wander.body.velocity.setMagnitude(0.1);
         
+        enemigos.forEachAlive(aplicar_movimiento, this);
+        
         tiempo_wander=game.time.now + 1000;
+    }
+    
+    if(enemigos.countDead() === 4){
+        player.kill();
+        //enemyBullets.callAll('kill');
+
+        fin_juego.text=" YOU WON ";
+        
+
     }
     
     //Para comprobar si existe solapamiento entre el poder emitido por megaman (bullet) y un diamante. Si existe solapamiento
     //se ejecuta la funcion colision con bullet y diamante como parametros.
     game.physics.arcade.overlap(bullet, enemigos, colision, null, this);
+    game.physics.arcade.overlap(poder_izq, enemigos, colision, null, this);
+    game.physics.arcade.overlap(esferas, enemigos, colision, null, this);
     
+    game.physics.arcade.overlap(player, diamante, recoger_diamante, null, this);
     //game.physics.arcade.overlap(disparo_enemigo, player, colision_jugador, null, this);
 
 }
@@ -467,6 +547,33 @@ function colision_jugador (disparo_enemigo, player){
     var exp=exp_player.getFirstExists(false);
     exp.reset(player.x, player.y);
     exp.play('exp', 30, false, true);
+}
+
+function recoger_diamante (player, diamante){
+    diamante.kill();
+    puede_disparar=true;
+    audio_estrellas.play('', 0, 0.5, false, true);
+    //  Add and update the score
+    score += 100;
+    scoreText.text = 'Score: ' + score;
+}
+
+function aplicar_movimiento (nave_wander){
+    var wander_force=wander(nave_wander);
+        
+    var magnitud=Math.sqrt(Math.pow(wander_force.x, 2) + Math.pow(wander_force.y, 2));
+
+    //--- Acotamos la magnitud del vector si supera la fuerza maxima admitida --- 
+    if(magnitud > max_wander_force)//500
+       wander_force=wander_force.setMagnitude(max_wander_force);
+
+    //--- Calculamos la aceleracion ---
+    wander_force.x=wander_force.x / wander_mass;//0.055
+    wander_force.y=wander_force.y / wander_mass;//0.055
+
+    //--- Modificamos la velocidad del objeto que deambula ---
+    nave_wander.body.velocity.x=nave_wander.body.velocity.x + wander_force.x*magnitud;
+    nave_wander.body.velocity.y=nave_wander.body.velocity.y + wander_force.y*magnitud;
 }
 
 </script>
