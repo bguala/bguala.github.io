@@ -39,6 +39,7 @@ function preload() {
     game.load.audio('audio_disparo', 'assets/audio/blaster.mp3');
     game.load.audio('audio_explosion', 'assets/audio/explosion.mp3');
     game.load.audio('audio_estrellas', 'assets/audio/p-ping.mp3');
+    game.load.audio('audio', 'assets/audio/rockman.mp3');
 }
 
 //--- Juega el rol de target en el steering behaviors seek ---
@@ -89,6 +90,7 @@ var fin_juego;
 
 var audio_disparo;
 var audio_explosion;
+var audio;
 
 function create() {
 
@@ -107,6 +109,10 @@ function create() {
     audio_disparo=game.add.audio('audio_disparo');
     audio_explosion=game.add.audio('audio_explosion');
     audio_estrellas=game.add.audio('audio_estrellas');
+    
+    audio=game.add.audio('audio');
+    audio.volume=0.3;
+    audio.play();
     
     //  The platforms group contains the ground and the 2 ledges we can jump on
     platforms = game.add.group();
@@ -176,14 +182,16 @@ function create() {
     }
 
     //  The score
-    //scoreText = game.add.text(16, 16, 'score: 0', { fontSize: '32px', fill: '#000' });
     scoreText=game.add.bitmapText(16, 16, 'fuente', 'score: 0', 15);
+    scoreText.fixedToCamera=true;
     scoreText.inputEnabled=true;
     scoreText.input.enableDrag();
     
-    fin_juego=game.add.bitmapText(300, 300, 'fuente', '', 15);
+    fin_juego=game.add.bitmapText(game.world.centerX, game.world.centerY, 'fuente', '', 40);
+    fin_juego.fixedToCamera=true;
     fin_juego.inputEnabled=true;
     fin_juego.input.enableDrag();
+    fin_juego.visible=false;
     //  Our controls.
     cursors = game.input.keyboard.createCursorKeys();
     
@@ -269,10 +277,7 @@ function setup (enemigo){
     enemigo.animations.add('exp');
 }
 
-function set (){
-    player.animations.add('exp');
-}
-
+//--- Las naves enemigas no se salen del mundo ---
 function limite (enemigo){
     enemigo.body.collideWorldBounds=true;
 }
@@ -346,11 +351,13 @@ function update() {
     {
         //  Move to the left
         player.body.velocity.x = -150;
-
+        
         player.animations.play('left');
         
         //--- Movemos la camara hacia la izquiera ---
         game.camera.follow(player, Phaser.Camera.FOLLOW_LOCKON);
+        
+        
     }
     else if (cursors.right.isDown)
     {
@@ -361,6 +368,9 @@ function update() {
         
         //--- Movemos la camara hacia la derecha ---
         game.camera.follow(player, Phaser.Camera.FOLLOW_LOCKON);
+        
+        
+        //game.add.bitmapText(game.camera.x, game.camera.y, 'fuente', 'score: 0', 15);
     }
     else
     {
@@ -415,12 +425,7 @@ function update() {
             //--- Defimos la posicion desde donde sale el disparo ---
             poder.reset(player.x, player.y);
             //--- Configuramos la velocidad horizontal del disparo ---
-            if(cursors.left.isDown)
-                poder.body.velocity.x=-250;
-            if(cursors.right.isDown)
-                poder.body.velocity.x=250;
-            else
-                poder.body.velocity.x=250;
+            poder.body.velocity.x=250;
             
             audio_disparo.play('', 0, 0.7, false, true);
             tiempo=game.time.now + 150;
@@ -439,7 +444,7 @@ function update() {
         disparos.push(d);
         
         audio_disparo.play('', 0, 0.7, false, true);
-        tiempo_enemigo=game.time.now + 15000;
+        tiempo_enemigo=game.time.now + 12000;
     }
     
     var i;
@@ -486,24 +491,39 @@ function update() {
         //--- Modificamos la velocidad del objeto que deambula ---
         nave_wander.body.velocity.x=nave_wander.body.velocity.x + wander_force.x*magnitud;
         nave_wander.body.velocity.y=nave_wander.body.velocity.y + wander_force.y*magnitud;
-
-        //magnitud=Math.sqrt(Math.pow(nave_wander.body.velocity.x, 2) + Math.pow(nave_wander.body.velocity.y, 2));
-
-        //if(magnitud > 0.1)
-          //nave_wander.body.velocity.setMagnitude(0.1);
         
         enemigos.forEachAlive(aplicar_movimiento, this);
         
         tiempo_wander=game.time.now + 1000;
     }
     
+    //--- Ganamos ---
     if(enemigos.countDead() === 4){
         player.kill();
-        //enemyBullets.callAll('kill');
-
+        nave.kill();
+        disparo_enemigo.destroy();
+        enemigos.destroy();
         fin_juego.text=" YOU WON ";
-        
-
+        fin_juego.visible=true;
+    }
+    
+    //--- Perdimos ---
+    if(score === -10){
+        player.kill();
+        nave.kill();
+        disparo_enemigo.destroy();
+        enemigos.destroy();
+        fin_juego.text=" GAME OVER ";
+        fin_juego.visible=true;
+    }
+    
+    if(player.position.y === 561){//El jugador cae en un precipicio.
+        player.kill();
+        nave.kill();
+        disparo_enemigo.destroy();
+        enemigos.destroy();
+        fin_juego.text=" GAME OVER ";
+        fin_juego.visible=true;
     }
     
     //Para comprobar si existe solapamiento entre el poder emitido por megaman (bullet) y un diamante. Si existe solapamiento
@@ -513,7 +533,9 @@ function update() {
     game.physics.arcade.overlap(esferas, enemigos, colision, null, this);
     
     game.physics.arcade.overlap(player, diamante, recoger_diamante, null, this);
-    //game.physics.arcade.overlap(disparo_enemigo, player, colision_jugador, null, this);
+    
+    //--- Comentar esta linea para ver mejor el movimiento seek ---
+    game.physics.arcade.overlap(player, disparo_enemigo, colision_jugador, null, this);
 
 }
 
@@ -541,11 +563,15 @@ function colision (bullet, d){
     explosion.play('exp', 30, false, true);
 }
 
-function colision_jugador (disparo_enemigo, player){
+function colision_jugador (player, disparo_enemigo){
     disparo_enemigo.kill();
     
-    var exp=exp_player.getFirstExists(false);
+    score -= 5;
+    scoreText.text = 'Score: ' + score;
+    
+    var exp=explosiones.getFirstExists(false);
     exp.reset(player.x, player.y);
+    audio_explosion.play('', 0, 0.5, false, true);
     exp.play('exp', 30, false, true);
 }
 
@@ -574,6 +600,11 @@ function aplicar_movimiento (nave_wander){
     //--- Modificamos la velocidad del objeto que deambula ---
     nave_wander.body.velocity.x=nave_wander.body.velocity.x + wander_force.x*magnitud;
     nave_wander.body.velocity.y=nave_wander.body.velocity.y + wander_force.y*magnitud;
+}
+
+function reducir_score (player, fire){
+    score -= 5;
+    scoreText.text = 'Score: ' + score;
 }
 
 </script>
