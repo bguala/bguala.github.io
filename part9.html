@@ -39,7 +39,7 @@ function preload() {
     game.load.audio('audio_disparo', 'assets/audio/blaster.mp3');
     game.load.audio('audio_explosion', 'assets/audio/explosion.mp3');
     game.load.audio('audio_estrellas', 'assets/audio/p-ping.mp3');
-    game.load.audio('audio', 'assets/audio/rockman.mp3');
+    game.load.audio('audio', 'assets/audio/rock.mp3');
 }
 
 //--- Juega el rol de target en el steering behaviors seek ---
@@ -503,6 +503,8 @@ function update() {
         nave.kill();
         disparo_enemigo.destroy();
         enemigos.destroy();
+        bullet.destroy();
+        poder_izq.destroy();
         fin_juego.text=" YOU WON ";
         fin_juego.visible=true;
     }
@@ -514,6 +516,7 @@ function update() {
         disparo_enemigo.destroy();
         enemigos.destroy();
         bullet.destroy();
+        poder_izq.destroy();
         fin_juego.text=" GAME OVER ";
         fin_juego.visible=true;
     }
@@ -524,6 +527,7 @@ function update() {
         disparo_enemigo.destroy();
         enemigos.destroy();
         bullet.destroy();
+        poder_izq.destroy();
         fin_juego.text=" GAME OVER ";
         fin_juego.visible=true;
     }
