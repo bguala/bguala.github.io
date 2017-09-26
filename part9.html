@@ -78,6 +78,11 @@ var max_wander_force=500;
 var wander_mass=0.055;
 var tiempo_wander=15000;
 
+//--- Parametros para implementar el steering behavior flocking ---
+var escudo=[];
+var grupo;
+var seguir=false;
+
 var explosiones;
 var diamante;
 var enemigos;
@@ -138,6 +143,7 @@ function create() {
     
     suelo=platforms.create(1200, game.world.height - 64, 'ground');
     suelo.scale.setTo(2, 3);
+    suelo.enableBody=true;
     suelo.body.immovable=true;
     
     piso_flotante=game.add.group();
@@ -334,12 +340,92 @@ function wander (nave_wander){
     return wander_force;
 }
 
+function alignment (){
+    var vector=new Phaser.Point();
+    var cantidad_vecinos=0;
+    var i;
+    var n=escudo.length;
+    var agente;
+    
+    for(i=0; i<n; i++){
+        agente=escudo[i];
+        if(Phaser.Point.distance(player.position, agente.position) < 100){//player.distance(agente)
+            vector.x = vector.x + agente.body.velocity.x;
+            vector.y = vector.y + agente.body.velocity.y;
+            cantidad_vecinos++;
+        }
+    }
+    
+    if(cantidad_vecinos === 0)
+        return vector;
+    else{
+        vector=vector.divide(cantidad_vecinos, cantidad_vecinos);
+        return vector.normalize();
+    }
+    
+}
+
+function cohesion (){
+    var vector=new Phaser.Point();
+    var cantidad_vecinos=0;
+    var direccion;
+    var i;
+    var n=escudo.length;
+    var agente;
+    
+    for(i=0; i<n; i++){
+        agente=escudo[i];
+        if(Phaser.Point.distance(player.position, agente.position) < 100){
+            vector.x += agente.position.x;
+            vector.y += agente.position.y;
+            cantidad_vecinos++;
+        }
+    }
+    console.log("Vector en Cohesion : ");
+    console.log(vector);
+    if(cantidad_vecinos === 0)
+        return vector;
+    else{
+        vector=vector.divide(cantidad_vecinos, cantidad_vecinos);
+        direccion=new Phaser.Point(vector.x - player.position.x, vector.y - player.position.y);
+        return direccion.normalize();
+    }
+}
+
+function separation (){
+    var vector=new Phaser.Point();
+    var cantidad_vecinos=0;
+    var i;
+    var n=escudo.length;
+    var agente;
+    
+    for(i=0; i<n; i++){
+        agente=escudo[i];
+        if(Phaser.Point.distance(player.position, agente.position) < 100){
+            vector.x += agente.position.x - player.position.x;
+            vector.y += agente.position.y - player.position.y;
+            cantidad_vecinos++;
+        }
+        
+    }
+    
+    if(cantidad_vecinos === 0)
+        return vector;
+    else{
+        vector=vector.divide(cantidad_vecinos, cantidad_vecinos);
+        vector=vector.multiply(-1, -1);
+        return vector.normalize();
+    }
+    
+}
+
 function update() {
 
     //  Collide the player and the stars with the platforms
     game.physics.arcade.collide(player, platforms);
     game.physics.arcade.collide(stars, platforms);
     game.physics.arcade.collide(player, piso_flotante);
+    game.physics.arcade.collide(grupo, suelo);
 
     //  Checks to see if the player overlaps with any of the stars, if he does call the collectStar function
     game.physics.arcade.overlap(player, stars, collectStar, null, this);
@@ -497,6 +583,28 @@ function update() {
         tiempo_wander=game.time.now + 1000;
     }
     
+    if(seguir){
+        var i;
+        var n=escudo.length;
+        var agente;
+
+        for(i=0; i<n; i++){
+            var alineacion=alignment();
+            var c=cohesion();
+            var separacion=separation();
+        
+            agente=escudo[i];
+            agente.body.velocity.x = agente.body.velocity.x + (alineacion.y + c.x*50 + separacion.x*200);
+            agente.body.velocity.y = agente.body.velocity.y + (alineacion.y + c.y*50 + separacion.y*200);
+            agente.body.velocity=agente.body.velocity.normalize();
+            
+            var magnitud=Math.sqrt(Math.pow(agente.body.velocity.x,2) + Math.pow(agente.body.velocity.y,2));
+            if(magnitud < 200*200)
+                agente.body.velocity.setMagnitude(200);
+            
+        }
+    }
+    
     //--- Ganamos ---
     if(enemigos.countDead() === 4){
         player.kill();
@@ -505,6 +613,8 @@ function update() {
         enemigos.destroy();
         bullet.destroy();
         poder_izq.destroy();
+        esferas.destroy();
+        seguir=false;
         fin_juego.text=" YOU WON ";
         fin_juego.visible=true;
     }
@@ -517,6 +627,8 @@ function update() {
         enemigos.destroy();
         bullet.destroy();
         poder_izq.destroy();
+        esferas.destroy();
+        seguir=false;
         fin_juego.text=" GAME OVER ";
         fin_juego.visible=true;
     }
@@ -528,6 +640,8 @@ function update() {
         enemigos.destroy();
         bullet.destroy();
         poder_izq.destroy();
+        esferas.destroy();
+        seguir=false;
         fin_juego.text=" GAME OVER ";
         fin_juego.visible=true;
     }
@@ -542,6 +656,8 @@ function update() {
     
     //--- Comentar esta linea para ver mejor el movimiento seek ---
     game.physics.arcade.overlap(player, disparo_enemigo, colision_jugador, null, this);
+    
+    game.physics.arcade.overlap(grupo, disparo_enemigo, eliminar_esfera,null, this);
 
 }
 
@@ -588,6 +704,30 @@ function recoger_diamante (player, diamante){
     //  Add and update the score
     score += 100;
     scoreText.text = 'Score: ' + score;
+    seguir=true;
+    //--- Escudo ---
+    grupo=game.add.group();
+    grupo.enableBody=true;
+    grupo.physicsBodyType=Phaser.Physics.ARCADE;
+    
+    var posicion=1300;
+    for(var i=0; i<4; i++){
+        var esc=grupo.create(posicion, 0, 'esfera');
+        esc.body.gravity.y=200;
+        escudo[i]=esc;
+        posicion += 50;
+    }
+    
+}
+
+function eliminar_esfera (grupo, disparo_enemigo){
+    disparo_enemigo.kill();
+    grupo.kill();
+    
+    var exp=explosiones.getFirstExists(false);
+    exp.reset(grupo.x, grupo.y);
+    audio_explosion.play('', 0, 0.5, false, true);
+    exp.play('exp', 30, false, true);
 }
 
 function aplicar_movimiento (nave_wander){
@@ -609,7 +749,7 @@ function aplicar_movimiento (nave_wander){
 }
 
 function reducir_score (player, fire){
-    score -= 5;
+    score -= 15;
     scoreText.text = 'Score: ' + score;
 }
 
