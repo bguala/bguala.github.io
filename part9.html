@@ -82,6 +82,8 @@ var tiempo_wander=15000;
 var escudo=[];
 var grupo;
 var seguir=false;
+var puntos=[];
+var angulo=0;
 
 var explosiones;
 var diamante;
@@ -271,7 +273,7 @@ function create() {
     nave_wander.body.collideWorldBounds = true;
     
     //--- Diamante ---
-    diamante=game.add.sprite(1500, 400, 'diamante');
+    diamante=game.add.sprite(300, 400, 'diamante');
     game.physics.arcade.enable(diamante);
     
 }
@@ -288,7 +290,10 @@ function limite (enemigo){
     enemigo.body.collideWorldBounds=true;
 }
 
-//--- Los puntos en el plano estan representados por las variables player y d --. 
+/*
+ * player = target.
+ * d = vehicle.
+ */
 function seek (d){
     var velocidad_maxima=200;
     var fuerza_maxima=0.1;
@@ -340,83 +345,123 @@ function wander (nave_wander){
     return wander_force;
 }
 
-function alignment (){
-    var vector=new Phaser.Point();
-    var cantidad_vecinos=0;
-    var i;
-    var n=escudo.length;
+//--- En el arreglo escudo se encuentran todas las entidades del mundo que vamos a usar en flocking ---
+function etiquetar_vecinos (){
+    var radio=12;
     var agente;
+    var tags=[];
     
-    for(i=0; i<n; i++){
+    for(var i=0; i<escudo.length; i++){
         agente=escudo[i];
-        if(Phaser.Point.distance(player.position, agente.position) < 100){//player.distance(agente)
-            vector.x = vector.x + agente.body.velocity.x;
-            vector.y = vector.y + agente.body.velocity.y;
-            cantidad_vecinos++;
-        }
+        if(Phaser.Point.distance(player.position, agente.position) < radio*radio)
+            tags.push(agente);
     }
     
-    if(cantidad_vecinos === 0)
-        return vector;
-    else{
-        vector=vector.divide(cantidad_vecinos, cantidad_vecinos);
-        return vector.normalize();
-    }
-    
+    return tags;
 }
 
-function cohesion (){
-    var vector=new Phaser.Point();
+function cohesion_1 (indice_agente){
+    //  Representa el centro de masa de todas las esferas.
+    var vector=new Phaser.Point(0,0);
     var cantidad_vecinos=0;
+    //  Vector que nos dirige hacia el centro de masa.
     var direccion;
     var i;
     var n=escudo.length;
     var agente;
     
     for(i=0; i<n; i++){
-        agente=escudo[i];
-        if(Phaser.Point.distance(player.position, agente.position) < 100){
+        
+        if(i !== indice_agente){
+        
+            agente=escudo[i];
+            
             vector.x += agente.position.x;
             vector.y += agente.position.y;
             cantidad_vecinos++;
+            
+        
         }
     }
-    console.log("Vector en Cohesion : ");
-    console.log(vector);
+    
     if(cantidad_vecinos === 0)
         return vector;
     else{
-        vector=vector.divide(cantidad_vecinos, cantidad_vecinos);
-        direccion=new Phaser.Point(vector.x - player.position.x, vector.y - player.position.y);
-        return direccion.normalize();
+        vector.x /= cantidad_vecinos;
+        vector.y /= cantidad_vecinos;//escudo[indice_agente]
+        
+        console.log("centro de masa : ");
+        console.log(vector);
+        var y=vector.y - escudo[indice_agente].position.y;
+        if(y === 0)
+            y=0.5;
+        
+        direccion=new Phaser.Point(vector.x - escudo[indice_agente].position.x, y);
+        
+        console.log("direccion : ");
+        console.log(direccion);
+        
+        direccion=direccion.normalize();
+        
+        return direccion;
     }
 }
 
-function separation (){
-    var vector=new Phaser.Point();
+function separation_1 (indice_agente){
+    var vector=new Phaser.Point(0,0);
     var cantidad_vecinos=0;
     var i;
     var n=escudo.length;
     var agente;
     
+    //  Recorremos todas las esferas.
     for(i=0; i<n; i++){
-        agente=escudo[i];
-        if(Phaser.Point.distance(player.position, agente.position) < 100){
-            vector.x += agente.position.x - player.position.x;
-            vector.y += agente.position.y - player.position.y;
-            cantidad_vecinos++;
-        }
+        if(i !== indice_agente){
         
+            agente=escudo[i];//escudo[indice_agente]
+            if(Phaser.Point.distance(escudo[indice_agente].position, agente.position) < 300){//200
+                var to_agent=new Phaser.Point(0,0);
+                to_agent.x = escudo[indice_agente].position.x - agente.position.x;
+                to_agent.y = escudo[indice_agente].position.y - agente.position.y;
+                to_agent=to_agent.normalize();
+                var magnitud=Math.sqrt(Math.pow(to_agent.x, 2) + Math.pow(to_agent.y, 2));
+                vector.x += to_agent.x*magnitud;
+                vector.y += to_agent.y*magnitud;
+                
+                //vector.x += escudo[indice_agente].position.x - agente.position.x;//- player.position.x;
+                //vector.y += escudo[indice_agente].position.y - agente.position.y;//- player.position.y;
+                //cantidad_vecinos++;
+                
+            }
+        
+        }
     }
     
-    if(cantidad_vecinos === 0)
-        return vector;
-    else{
-        vector=vector.divide(cantidad_vecinos, cantidad_vecinos);
-        vector=vector.multiply(-1, -1);
-        return vector.normalize();
+    //vector.x /= cantidad_vecinos;
+    //vector.y /= cantidad_vecinos;
+    vector.x *= -1; 
+    vector.y *= -1;
+    
+    return vector.normalize();
+    
+}
+
+//--- player es un objeto Point ---
+function arrive (esfera, player){
+    var radio=50;
+    var velocidad_maxima=200;
+    var n;
+    var velocidad_deseada=Phaser.Point.subtract(player, esfera.position);
+    var longitud=Math.sqrt(Math.pow(velocidad_deseada.x, 2) + Math.pow(velocidad_deseada, 2));
+    
+    if(longitud < radio){
+        n=longitud/radio;
+        velocidad_deseada=(velocidad_deseada.normalize()).multiply(velocidad_maxima*n, velocidad_maxima*n);
+    }else{
+        velocidad_deseada=(velocidad_deseada.normalize()).multiply(velocidad_maxima, velocidad_maxima);
     }
     
+    return Phaser.Point.subtract(velocidad_deseada, esfera.body.velocity);
 }
 
 function update() {
@@ -586,23 +631,72 @@ function update() {
     if(seguir){
         var i;
         var n=escudo.length;
-        var agente;
-
-        for(i=0; i<n; i++){
-            var alineacion=alignment();
-            var c=cohesion();
-            var separacion=separation();
+        var agente;        
         
-            agente=escudo[i];
-            agente.body.velocity.x = agente.body.velocity.x + (alineacion.y + c.x*50 + separacion.x*200);
-            agente.body.velocity.y = agente.body.velocity.y + (alineacion.y + c.y*50 + separacion.y*200);
-            agente.body.velocity=agente.body.velocity.normalize();
+        
+        
+        for(i=0; i<escudo.length; i++){           
             
-            var magnitud=Math.sqrt(Math.pow(agente.body.velocity.x,2) + Math.pow(agente.body.velocity.y,2));
+            agente=escudo[i];            
+
+            var c=cohesion_1(i);
+            
+            console.log("velocidad del agente sin cohesion :");
+            console.log(agente.body.velocity);
+            console.log("fuerza de cohesion : ");
+            console.log(c);
+            
+            agente.body.velocity.x = agente.body.velocity.x + (c.x);//*30.9
+            agente.body.velocity.y = agente.body.velocity.y + (c.y);//*30.9
+            
+            magnitud=Math.sqrt(Math.pow(agente.body.velocity.x,2) + Math.pow(agente.body.velocity.y,2));
             if(magnitud < 200*200)
-                agente.body.velocity.setMagnitude(200);
+                agente.body.velocity.setMagnitude(100);
+            
+            //var fuerza=arrive(agente, player.position);
+            
+            //--- Sumamos la velocidad actual con la aceleracion calculada anteriormente ---
+            //agente.body.velocity.x = agente.body.velocity.x + fuerza.x;
+            //agente.body.velocity.y = agente.body.velocity.y + fuerza.y;
+        
+            //var magnitud=Math.sqrt(Math.pow(agente.body.velocity.x, 2) + Math.pow(agente.body.velocity.y, 2));
+        
+            //--- Si la velocidad actual es muy alta, la acotamos a la velocidad maxima admitida ---
+            //if(magnitud > speed_max)//200
+                //agente.body.velocity.setMagnitude(speed_max/3);
+            
+            //angulo += 90;
             
         }
+        
+        for(var i=0; i<escudo.length; i++){
+            
+            agente=escudo[i];
+            var separacion=separation_1(i);
+            
+            console.log("Velocidad del agente sin separacion : ");
+            console.log(agente.body.velocity);
+            console.log("Fuerza de separacion : ");
+            console.log(separacion);
+            
+            agente.body.velocity.x = agente.body.velocity.x + (separacion.x*18);//*18.1
+            agente.body.velocity.y = agente.body.velocity.y + (separacion.y*18);//*18.1
+            
+            magnitud=Math.sqrt(Math.pow(agente.body.velocity.x,2) + Math.pow(agente.body.velocity.y,2));
+            if(magnitud < 200*200)
+                agente.body.velocity.setMagnitude(100);
+            
+        }
+        
+        for(i=0; i<escudo.length; i++){
+            var velocidad=Phaser.Point.subtract(player.position, escudo[i].position);
+            //velocidad=velocidad.normalize();
+            
+            escudo[i].body.velocity.x += velocidad.x;
+            escudo[i].body.velocity.y += velocidad.y;
+        }
+        
+        
     }
     
     //--- Ganamos ---
@@ -710,12 +804,12 @@ function recoger_diamante (player, diamante){
     grupo.enableBody=true;
     grupo.physicsBodyType=Phaser.Physics.ARCADE;
     
-    var posicion=1300;
-    for(var i=0; i<4; i++){
-        var esc=grupo.create(posicion, 0, 'esfera');
-        esc.body.gravity.y=200;
+    var posicion=300;
+    for(var i=0; i<9; i++){
+        var esc=grupo.create(posicion, 400, 'esfera');
+        //esc.body.gravity.y=200;
         escudo[i]=esc;
-        posicion += 50;
+        posicion += 25;
     }
     
 }
