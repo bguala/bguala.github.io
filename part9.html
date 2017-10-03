@@ -419,14 +419,15 @@ function separation_1 (indice_agente){
         if(i !== indice_agente){
         
             agente=escudo[i];//escudo[indice_agente]
+            
             if(Phaser.Point.distance(escudo[indice_agente].position, agente.position) < 300){//200
                 var to_agent=new Phaser.Point(0,0);
                 to_agent.x = escudo[indice_agente].position.x - agente.position.x;
                 to_agent.y = escudo[indice_agente].position.y - agente.position.y;
                 to_agent=to_agent.normalize();
                 var magnitud=Math.sqrt(Math.pow(to_agent.x, 2) + Math.pow(to_agent.y, 2));
-                vector.x += to_agent.x*magnitud;
-                vector.y += to_agent.y*magnitud;
+                vector.x += to_agent.x;
+                vector.y += to_agent.y;
                 
                 //vector.x += escudo[indice_agente].position.x - agente.position.x;//- player.position.x;
                 //vector.y += escudo[indice_agente].position.y - agente.position.y;//- player.position.y;
@@ -439,8 +440,8 @@ function separation_1 (indice_agente){
     
     //vector.x /= cantidad_vecinos;
     //vector.y /= cantidad_vecinos;
-    vector.x *= -1; 
-    vector.y *= -1;
+    //vector.x *= -1; 
+    //vector.y *= -1;
     
     return vector.normalize();
     
@@ -646,8 +647,8 @@ function update() {
             console.log("fuerza de cohesion : ");
             console.log(c);
             
-            agente.body.velocity.x = agente.body.velocity.x + (c.x);//*30.9
-            agente.body.velocity.y = agente.body.velocity.y + (c.y);//*30.9
+            agente.body.velocity.x = agente.body.velocity.x + (c.x*0.05);//*30.9
+            agente.body.velocity.y = agente.body.velocity.y + (c.y*0.05);//*30.9
             
             magnitud=Math.sqrt(Math.pow(agente.body.velocity.x,2) + Math.pow(agente.body.velocity.y,2));
             if(magnitud < 200*200)
@@ -679,8 +680,8 @@ function update() {
             console.log("Fuerza de separacion : ");
             console.log(separacion);
             
-            agente.body.velocity.x = agente.body.velocity.x + (separacion.x*18);//*18.1
-            agente.body.velocity.y = agente.body.velocity.y + (separacion.y*18);//*18.1
+            agente.body.velocity.x = agente.body.velocity.x + (separacion.x*25);//*18.1
+            agente.body.velocity.y = agente.body.velocity.y + (separacion.y*25);//*18.1
             
             magnitud=Math.sqrt(Math.pow(agente.body.velocity.x,2) + Math.pow(agente.body.velocity.y,2));
             if(magnitud < 200*200)
@@ -690,7 +691,6 @@ function update() {
         
         for(i=0; i<escudo.length; i++){
             var velocidad=Phaser.Point.subtract(player.position, escudo[i].position);
-            //velocidad=velocidad.normalize();
             
             escudo[i].body.velocity.x += velocidad.x;
             escudo[i].body.velocity.y += velocidad.y;
